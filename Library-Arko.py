@@ -1,89 +1,92 @@
-from flask import Flask, jsonify, request
-import mysql.connector
-from flask_cors import CORS  # Import CORS from flask_cors
+from flask import Flask, jsonify, request, abort
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
 
-# MySQL configurations
-mysql_config = {
-    'host': 'localhost',
-    'port':'3306',
-    'user': 'root',
-    'password': 'Library',
-    'database': 'library'
-}
-
-# Helper function to establish MySQL connection
-def get_mysql_connection():
-    return mysql.connector.connect(**mysql_config)
-
+# Database configurations
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+app.config["SQLALCHEMY_DATABASE_URI"] = "mysql://root:Library@localhost:3306/library"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Endpoint 1: Retrieve All Books
-@app.route('/api/books', methods=['GET'])
+db = SQLAlchemy(app)
+
+# Define a model for Book
+class
+ 
+Book(db.Model):
+    __tablename__ = "books"
+
+
+    
+id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(100), nullable=False)
+    author = db.Column(db.String(50), nullable=False)
+    genre = db.Column(db.String(50))
+    publication_year = db.Column(db.Integer, nullable=False)
+    isbn = db.Column(db.String(13), unique=True, nullable=False)
+
+    def __repr__(self):
+        return f"<Book {self.title}>"
+
+CORS(app)
+
+# Endpoint 1: Retrieve All Books (GET)
+@app.route("/api/books", methods=["GET"])
 def get_all_books():
-    try:
-        conn = get_mysql_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM books")
-        books = cursor.fetchall()
-        cursor.close()
-        return jsonify(books), 200
+    books = Book.query.all()
+    return jsonify({"books": [book.serialize() for book in books]})
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-# Endpoint 2: Add a New Book
-@app.route('/api/books', methods=['POST'])
+# Endpoint 2: Add a New Book (POST)
+@app.route("/api/books", methods=["POST"])
 def add_new_book():
+    data = request.json
+    if not all(key in data for key in ("title", "author", "publication_year", "isbn")):
+        abort(400, description="Missing required fields.")
+
     try:
-        data = request.json
-        title = data.get('title')
-        author = data.get('author')
-        genre = data.get('genre')
-        publication_year = data.get('publication_year')
-        isbn = data.get('isbn')
-
-        if not title or not author or not genre or not publication_year or not isbn:
-            return jsonify({'error': 'Incomplete data provided'}), 400
-
-        conn = get_mysql_connection()
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO books (title, author, genre, publication_year, isbn) VALUES (%s, %s, %s, %s, %s)",
-                       (title, author, genre, publication_year, isbn))
-        conn.commit()
-        cursor.close()
-        return jsonify({'message': 'Book added successfully'}), 201
-
+        book = Book(
+            title=data["title"],
+            author=data["author"],
+            genre=data.get("genre"),
+            publication_year=data["publication_year"],
+            isbn=data["isbn"],
+        )
+        db.session.add(book)
+        db.session.commit()
+        return jsonify({"message": "Book added successfully."}), 201
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        abort(400, description=str(e))
 
-# Endpoint 3: Update Book Details
-@app.route('/api/books/<int:book_id>', methods=['PUT'])
+# Endpoint 3: Update Book Details (PUT)
+@app.route("/api/books/<int:book_id>", methods=["PUT"])
 def update_book_details(book_id):
+    data = request.json
+    if not any(data):
+        abort(400, description="No data provided for update.")
+
     try:
-        data = request.json
-        title = data.get('title')
-        author = data.get('author')
-        genre = data.get('genre')
-        publication_year = data.get('publication_year')
-        isbn = data.get('isbn')
-
-        conn = get_mysql_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM books WHERE book_id = %s", (book_id,))
-        book = cursor.fetchone()
-
+        book = Book.query.get(book_id)
         if not book:
-            return jsonify({'error': 'Book not found'}), 404
+            abort(404, description="Book not found.")
 
-        cursor.execute("UPDATE books SET title = %s, author = %s, genre = %s, publication_year = %s, isbn = %s WHERE book_id = %s",
-                       (title, author, genre, publication_year, isbn, book_id))
-        conn.commit()
-        cursor.close()
-        return jsonify({'message': 'Book details updated successfully'}), 200
+        for key, value in data.items():
+            setattr(book, key, value)
 
+        db.session.commit()
+        return jsonify({"message": "Book details updated successfully."}), 200
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        abort(400, description=str(e))
+
+# Serialization helper
+def serialize(self):
+    return {
+        "id": self.id,
+        "title": self.title,
+        "author": self.author,
+        "genre": self.genre,
+        "publication_year": self.publication_year,
+        "isbn": self.isbn,
+    }
 
 if __name__ == "__main__":
+    db.create_all()
     app.run(debug=True)
