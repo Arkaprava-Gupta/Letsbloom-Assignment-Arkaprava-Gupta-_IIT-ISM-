@@ -1,11 +1,11 @@
 from flask import Flask, jsonify, request
 import mysql.connector
-from flask_cors import CORS  # Import CORS from flask_cors
+from flask_cors import CORS
 
 # MySQL configurations
 mysql_config = {
     'host': 'localhost',
-    'port':'3306',
+    'port': '3306',
     'user': 'root',
     'password': 'Library',
     'database': 'library'
@@ -27,10 +27,15 @@ def get_all_books():
         cursor.execute("SELECT * FROM books")
         books = cursor.fetchall()
         cursor.close()
+        conn.close()
+
         return jsonify(books), 200
 
+    except mysql.connector.Error as e:
+        return jsonify({'error': f"Database error: {e}"}), 500
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f"An unexpected error occurred: {e}"}), 500
 
 # Endpoint 2: Add a New Book
 @app.route('/api/books', methods=['POST'])
@@ -43,23 +48,26 @@ def add_new_book():
         publication_year = data.get('publication_year')
         isbn = data.get('isbn')
 
-        if not title or not author or not genre or not publication_year or not isbn:
+        if not all([title, author, genre, publication_year, isbn]):
             return jsonify({'error': 'Incomplete data provided'}), 400
 
         conn = get_mysql_connection()
         cursor = conn.cursor()
 
-        # Insert the record, and ignore if a duplicate key error occurs (assuming isbn is a unique key)
-        cursor.execute("INSERT IGNORE INTO books (title, author, genre, publication_year, isbn) VALUES (%s, %s, %s, %s, %s)",
+        cursor.execute("INSERT INTO books (title, author, genre, publication_year, isbn) VALUES (%s, %s, %s, %s, %s)",
                        (title, author, genre, publication_year, isbn))
         
         conn.commit()
         cursor.close()
+        conn.close()
+
         return jsonify({'message': 'Book added successfully'}), 201
 
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except mysql.connector.IntegrityError as e:
+        return jsonify({'error': f"Duplicate entry. Book with ISBN {isbn} already exists"}), 400
 
+    except Exception as e:
+        return jsonify({'error': f"An unexpected error occurred: {e}"}), 500
 
 # Endpoint 3: Update Book Details
 @app.route('/api/books/<int:book_id>', methods=['PUT'])
@@ -84,10 +92,12 @@ def update_book_details(book_id):
                        (title, author, genre, publication_year, isbn, book_id))
         conn.commit()
         cursor.close()
+        conn.close()
+
         return jsonify({'message': 'Book details updated successfully'}), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f"An unexpected error occurred: {e}"}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
